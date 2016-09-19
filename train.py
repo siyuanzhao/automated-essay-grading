@@ -7,21 +7,32 @@ import tensorflow as tf
 from memn2n_kv import add_gradient_noise
 import time
 import os
+import sys
+
+orig_stdout = sys.stdout
+timestamp = str(int(time.time()))
+out_dir = os.path.abspath(os.path.join(os.path.curdir,
+                                       "runs", timestamp))
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+f = file(out_dir+'/out.txt', 'w')
+sys.stdout = f
+print("Writing to {}\n".format(out_dir))
 
 print 'start to load flags\n'
 
 # flags
 tf.flags.DEFINE_float("epsilon", 0.1, "Epsilon value for Adam Optimizer.")
-tf.flags.DEFINE_float("l2_lambda", 0.2, "Lambda for l2 loss.")
+tf.flags.DEFINE_float("l2_lambda", 0.3, "Lambda for l2 loss.")
 tf.flags.DEFINE_float("learning_rate", 0.001, "Learning rate")
 tf.flags.DEFINE_float("max_grad_norm", 20.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 1.0, "Keep probability for dropout")
-tf.flags.DEFINE_integer("evaluation_interval", 10, "Evaluate and print results every x epochs")
-tf.flags.DEFINE_integer("batch_size", 50, "Batch size for training.")
-tf.flags.DEFINE_integer("feature_size", 30, "Feature size")
+tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+tf.flags.DEFINE_integer("feature_size", 50, "Feature size")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
-tf.flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
-tf.flags.DEFINE_integer("embedding_size", 50, "Embedding size for embedding matrices.")
+tf.flags.DEFINE_integer("epochs", 150, "Number of epochs to train for.")
+tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
 tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
 tf.flags.DEFINE_string("reader", "bow", "Reader for the model (bow, simple_gru)")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
@@ -44,15 +55,9 @@ l2_lambda = FLAGS.l2_lambda
 hops = FLAGS.hops
 reader = 'bow'
 epochs = FLAGS.epochs
-num_samples = 3
+num_samples = 4
+test_batch_size = 30
 
-timestamp = str(int(time.time()))
-out_dir = os.path.abspath(os.path.join(os.path.curdir,
-                                       "runs", timestamp))
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
-
-print("Writing to {}\n".format(out_dir))
 with open(out_dir+'/params', 'w') as f:
     for attr, value in sorted(FLAGS.__flags.items()):
         f.write("{}={}".format(attr.upper(), value))
@@ -88,28 +93,28 @@ with open(out_dir+'/params', 'a') as f:
 print 'The length of score range is {}'.format(len(score_range))
 E = data_utils.vectorize_data(essay_list, word_idx, max_sent_size)
 
-memory = []
-memory_score = []
-memory_sent_size = []
-# pick sampled essay for each score
-for i in score_range:
-    for j in range(num_samples):
-        if i in resolved_scores:
-            score_idx = resolved_scores.index(i)
-            score = resolved_scores.pop(score_idx)
-            essay = E.pop(score_idx)
-            sent_size = sent_size_list.pop(score_idx)
-            memory.append(essay)
-            memory_score.append(score)
-            memory_sent_size.append(sent_size)
-
-memory_size = len(memory)
 labeled_data = zip(E, resolved_scores, sent_size_list)
 
 # split the data on the fly
 trainE, testE, train_scores, test_scores, train_sent_sizes, test_sent_sizes = cross_validation.train_test_split(E, resolved_scores, sent_size_list, test_size=.2)
 
 trainE, evalE, train_scores, eval_scores, train_sent_sizes, eval_sent_sizes = cross_validation.train_test_split(trainE, train_scores, train_sent_sizes, test_size=.1)
+
+memory = []
+memory_score = []
+memory_sent_size = []
+# pick sampled essay for each score
+for i in score_range:
+    for j in range(num_samples):
+        if i in train_scores:
+            score_idx = train_scores.index(i)
+            score = train_scores.pop(score_idx)
+            essay = trainE.pop(score_idx)
+            sent_size = sent_size_list.pop(score_idx)
+            memory.append(essay)
+            memory_score.append(score)
+            memory_sent_size.append(sent_size)
+memory_size = len(memory)
 
 # convert score to one hot encoding
 train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
@@ -142,7 +147,7 @@ with tf.Graph().as_default():
 
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, epsilon=FLAGS.epsilon)
 
-    with tf.Session() as sess:
+    with tf.Session(config=session_conf) as sess:
         model = MemN2N_KV(batch_size, vocab_size, max_sent_size, max_sent_size, memory_size,
                           memory_size, embedding_size, len(score_range), feature_size, hops, reader, l2_lambda)
 
@@ -195,8 +200,8 @@ with tf.Graph().as_default():
             if i % FLAGS.evaluation_interval == 0 or i == FLAGS.epochs:
                 # test on training data
                 train_preds = []
-                for start in range(0, n_train, batch_size):
-                    end = min(n_train, start+batch_size)
+                for start in range(0, n_train, test_batch_size):
+                    end = min(n_train, start+test_batch_size)
                     
                     batched_memory = []
                     for _ in range(end-start):
@@ -209,8 +214,8 @@ with tf.Graph().as_default():
             
                 # test on eval data
                 eval_preds = []
-                for start in range(0, n_eval, batch_size):
-                    end = min(n_eval, start+batch_size)
+                for start in range(0, n_eval, test_batch_size):
+                    end = min(n_eval, start+test_batch_size)
                     
                     batched_memory = []
                     for _ in range(end-start):
@@ -224,8 +229,8 @@ with tf.Graph().as_default():
 
                 # test on test data
                 test_preds = []
-                for start in range(0, n_test, batch_size):
-                    end = min(n_test, start+batch_size)
+                for start in range(0, n_test, test_batch_size):
+                    end = min(n_test, start+test_batch_size)
                     
                     batched_memory = []
                     for _ in range(end-start):
@@ -240,9 +245,11 @@ with tf.Graph().as_default():
                 print("Training kappa score = {}".format(train_kappp_score))
                 print("Validation kappa score = {}".format(eval_kappp_score))
                 print("Testing kappa score = {}".format(test_kappp_score))
-                with open(out_dir+'/eval', 'w') as f:
+                with open(out_dir+'/eval', 'a') as f:
                     f.write("Training kappa score = {}\n".format(train_kappp_score))
                     f.write("Validation kappa score = {}\n".format(eval_kappp_score))
                     f.write("Testing kappa score = {}\n".format(test_kappp_score))
                     f.write('*'*10)
                     f.write('\n')
+sys.stdout = orig_stdout
+f.close()

@@ -23,7 +23,7 @@ def position_encoding(sentence_size, embedding_size):
     encoding = 1 + 4 * encoding / embedding_size / sentence_size
     return np.transpose(encoding)
 
-def add_gradient_noise(t, stddev=1e-3, name=None):
+def add_gradient_noise(t, stddev=1e-3, step=0, name=None):
     """
     Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
 
@@ -34,7 +34,9 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
     0.001 was said to be a good fixed value for memory networks [2].
     """
     with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
+        #r = 0.55
         t = tf.convert_to_tensor(t, name="t")
+        #sd = stddev/(1+step)**r
         gn = tf.random_normal(tf.shape(t), stddev=stddev)
         return tf.add(t, gn, name=name)
 
