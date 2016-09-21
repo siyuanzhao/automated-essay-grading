@@ -23,7 +23,7 @@ def position_encoding(sentence_size, embedding_size):
     encoding = 1 + 4 * encoding / embedding_size / sentence_size
     return np.transpose(encoding)
 
-def add_gradient_noise(t, stddev=1e-3, step=0, name=None):
+def add_gradient_noise(t, stddev=1e-3, name=None):
     """
     Adds gradient noise as described in http://arxiv.org/abs/1511.06807 [2].
 
@@ -242,7 +242,7 @@ class MemN2N_KV(object):
         
         with tf.variable_scope(self._name):
             # [feature_size, batch_size]
-            u = tf.matmul(self.A, questions, transpose_b=True)
+            u = tf.nn.relu(tf.matmul(self.A, questions, transpose_b=True))
             u = [u]
             for _ in range(self._hops):
                 R = r_list[_]

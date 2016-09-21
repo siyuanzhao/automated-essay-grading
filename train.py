@@ -9,27 +9,18 @@ import time
 import os
 import sys
 
-orig_stdout = sys.stdout
-timestamp = str(int(time.time()))
-out_dir = os.path.abspath(os.path.join(os.path.curdir,
-                                       "runs", timestamp))
-if not os.path.exists(out_dir):
-    os.makedirs(out_dir)
-f = file(out_dir+'/out.txt', 'w')
-sys.stdout = f
-print("Writing to {}\n".format(out_dir))
-
 print 'start to load flags\n'
 
 # flags
 tf.flags.DEFINE_float("epsilon", 0.1, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("l2_lambda", 0.3, "Lambda for l2 loss.")
-tf.flags.DEFINE_float("learning_rate", 0.001, "Learning rate")
-tf.flags.DEFINE_float("max_grad_norm", 20.0, "Clip gradients to this norm.")
+tf.flags.DEFINE_float("learning_rate", 0.002, "Learning rate")
+tf.flags.DEFINE_float("max_grad_norm", 10.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 1.0, "Keep probability for dropout")
-tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
-tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
+tf.flags.DEFINE_integer("evaluation_interval", 3, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("batch_size", 50, "Batch size for training.")
 tf.flags.DEFINE_integer("feature_size", 50, "Feature size")
+tf.flags.DEFINE_integer("num_samples", 4, "Feature size")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 150, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
@@ -37,16 +28,10 @@ tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
 tf.flags.DEFINE_string("reader", "bow", "Reader for the model (bow, simple_gru)")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
-# print flags info
-# todo: save to a file for furture reference
+# hyper-parameters
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
-print("\nParameters:")
-for attr, value in sorted(FLAGS.__flags.items()):
-    print("{}={}".format(attr.upper(), value))
-print("")
 
-# hyper-parameters
 essay_set_id = FLAGS.essay_set_id
 batch_size = FLAGS.batch_size
 embedding_size = FLAGS.embedding_size
@@ -55,8 +40,26 @@ l2_lambda = FLAGS.l2_lambda
 hops = FLAGS.hops
 reader = 'bow'
 epochs = FLAGS.epochs
-num_samples = 4
-test_batch_size = 30
+num_samples = FLAGS.num_samples
+test_batch_size = 50
+
+# print flags info
+orig_stdout = sys.stdout
+timestamp = str(int(time.time()))
+folder_name = 'essay_set_{}_{}'.format(essay_set_id, timestamp)
+out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", folder_name))
+if not os.path.exists(out_dir):
+    os.makedirs(out_dir)
+
+# save output to a file
+f = file(out_dir+'/out.txt', 'w')
+sys.stdout = f
+print("Writing to {}\n".format(out_dir))
+
+print("\nParameters:")
+for attr, value in sorted(FLAGS.__flags.items()):
+    print("{}={}".format(attr.upper(), value))
+print("")
 
 with open(out_dir+'/params', 'w') as f:
     for attr, value in sorted(FLAGS.__flags.items()):
