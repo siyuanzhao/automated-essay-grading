@@ -1,12 +1,15 @@
 import re
 import os as os
 import numpy as np
+import itertools
 import pandas as pd
+from collections import Counter
 
 def load_training_data(training_path, essay_set=1):
     training_df = pd.read_csv(training_path, delimiter='\t')
     # resolved score for essay set 1
     resolved_score = training_df[training_df['essay_set'] == essay_set]['domain1_score']
+    essay_ids = training_df[training_df['essay_set'] == essay_set]['essay_id']
     essays = training_df[training_df['essay_set'] == essay_set]['essay']
     essay_list = []
     # turn an essay to a list of words
@@ -14,16 +17,17 @@ def load_training_data(training_path, essay_set=1):
         essay = clean_str(essay)
         #essay_list.append([w for w in tokenize(essay) if is_ascii(w)])
         essay_list.append(tokenize(essay))
-    return essay_list, resolved_score.tolist()
+    return essay_list, resolved_score.tolist(), essay_ids.tolist()
     
-def load_glove(dim=50):
+def load_glove(token_num=6, dim=50):
     word2vec = []
     word_idx = {}
     # first word is nil
     word2vec.append([0]*dim)
     print "==> loading glove"
     count = 1
-    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "glove_6b/glove.6B." + str(dim) + "d.txt")) as f:
+    with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "glove/glove."+str(token_num)+
+                           "B." + str(dim) + "d.txt")) as f:
         for line in f:
             l = line.split()
             word = l[0]
@@ -65,6 +69,23 @@ def clean_str(string):
     string = re.sub(r"\s{2,}", " ", string)
 
     return string.strip().lower()
+
+def build_vocab(sentences, vocab_limit):
+    """
+    Builds a vocabulary mapping from word to index based on the sentences.
+    Returns vocabulary mapping and inverse vocabulary mapping.
+    """
+    # Build vocabulary
+    word_counts = Counter(itertools.chain(*sentences))
+    print 'Total size of vocab is {}'.format(len(word_counts.most_common()))
+    # Mapping from index to word
+    # vocabulary_inv = [x[0] for x in word_counts.most_common(vocab_limit)]
+    vocabulary_inv = [x[0] for x in word_counts.most_common(vocab_limit)]
+    
+    vocabulary_inv = list(sorted(vocabulary_inv))
+    # Mapping from word to index
+    vocabulary = {x: i+1 for i, x in enumerate(vocabulary_inv)}
+    return [vocabulary, vocabulary_inv]
 
 # data is DataFrame
 def vectorize_data(data, word_idx, sentence_size):

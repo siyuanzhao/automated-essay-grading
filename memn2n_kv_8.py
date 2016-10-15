@@ -56,7 +56,8 @@ class MemN2N_KV(object):
     """Key Value Memory Network."""
     def __init__(self, batch_size, vocab_size,
                  query_size, story_size, memory_key_size,
-                 memory_value_size, embedding_size, score_range,
+                 memory_value_size, embedding_size,
+                 min_score, max_score,
                  feature_size=30,
                  hops=3,
                  reader='bow',
@@ -105,10 +106,11 @@ class MemN2N_KV(object):
         self._n_hidden = feature_size
         self.reader_feature_size = 0
 
-        # one-hot encoding for scores
-        self._labels = tf.one_hot(self._score_encoding, score_range, on_value=1.0, off_value=0.0, axis=-1)
         # trainable variables
-        self.reader_feature_size = self._embedding_size
+        if reader == 'bow':
+            self.reader_feature_size = self._embedding_size
+        elif reader == 'simple_gru':
+            self.reader_feature_size = self._n_hidden
 
         self.A = tf.get_variable('A', shape=[self._feature_size, self.reader_feature_size],
                                  initializer=tf.contrib.layers.xavier_initializer())
@@ -123,29 +125,23 @@ class MemN2N_KV(object):
         #                          initializer=tf.contrib.layers.xavier_initializer())
 
         # Embedding layer
-        #with tf.device('/cpu:0'), tf.name_scope("embedding"):
         #nil_word_slot = tf.zeros([1, embedding_size])
         #self.W = tf.concat(0, [nil_word_slot, tf.get_variable('W', shape=[vocab_size-1, embedding_size],
         #                                                      initializer=tf.contrib.layers.xavier_initializer())])
-        #self.W_memory = tf.concat(0, [nil_word_slot, tf.get_variable('W_memory', shape=[vocab_size-1, embedding_size],
-        #                                                             initializer=tf.contrib.layers.xavier_initializer())])
-        #W = tf.Variable(tf.constant(0.0, shape=[self._vocab_size, self._embedding_size]),
-        #                trainable=False, name="W")
         self.W = tf.Variable(self.w_placeholder, trainable=False)
-        #self.W = tf.get_variable('W', [self._vocab_size, self._embedding_size], trainable=False)
-        #self.W = W.assign(self.w_placeholder)
-        #self.W = tf.constant(word_vectors, dtype=tf.float32, name='W')
         self.W_memory = self.W
-        
+        #self._nil_vars = set([self.W.name, self.W_memory.name])
         # shape: [batch_size, query_size, embedding_size]
         self.embedded_chars = tf.nn.embedding_lookup(self.W, self._query)
         # shape: [batch_size, memory_size, story_size, embedding_size]
         self.mkeys_embedded_chars = tf.nn.embedding_lookup(self.W_memory, self._memory_key)
         # shape: [batch_size, memory_size, story_size, embedding_size]
         self.mvalues_embedded_chars = tf.nn.embedding_lookup(self.W_memory, self._memory_key)
-        q_r = tf.reduce_sum(self.embedded_chars*self._encoding, 1)
-        doc_r = tf.reduce_sum(self.mkeys_embedded_chars*self._encoding, 2)
-        value_r = tf.reduce_sum(self.mvalues_embedded_chars*self._encoding, 2)
+
+        if reader == 'bow':
+            q_r = tf.reduce_sum(self.embedded_chars*self._encoding, 1)
+            doc_r = tf.reduce_sum(self.mkeys_embedded_chars*self._encoding, 2)
+            value_r = tf.reduce_sum(self.mvalues_embedded_chars*self._encoding, 2)
 
         r_list = []
         for _ in range(self._hops):
@@ -158,44 +154,38 @@ class MemN2N_KV(object):
         o = tf.transpose(o)
         if reader == 'bow':
             #self.B = self.A
-            self.B = tf.get_variable('B', shape=[self._feature_size, score_range],
-                                     initializer=tf.contrib.layers.xavier_initializer())
+            self.B = tf.get_variable('B', shape=[self._feature_size, 1],
+                                     initializer=tf.truncated_normal_initializer())
         elif reader == 'simple_gru':
             #self.B = tf.get_variable('B', shape=[self._feature_size, self._embedding_size],
             self.B = tf.get_variable('B', shape=[self._feature_size, self._vocab_size],
                                      initializer=tf.contrib.layers.xavier_initializer())
-        logits_bias = tf.get_variable('logits_bias', [score_range])
+        logits_bias = tf.get_variable('logits_bias', [1])
         # y_tmp = tf.matmul(self.B, self.W_memory, transpose_b=True)
         with tf.name_scope("prediction"):
             #logits = tf.matmul(o, y_tmp)# + logits_bias
             logits = tf.matmul(o, self.B) + logits_bias
-            probs = tf.nn.softmax(tf.cast(logits, tf.float32))
-            
-            cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, tf.cast(self._labels, tf.float32), name='cross_entropy')
-            cross_entropy_sum = tf.reduce_sum(cross_entropy, name="cross_entropy_sum")
-
+            normed_score = tf.squeeze(tf.nn.sigmoid(tf.cast(logits, tf.float32)))
+            score = normed_score * (max_score - min_score) + min_score
+            mse = tf.reduce_mean(tf.square(tf.sub(score, self._score_encoding)))
             # loss op
             trainable_vars = tf.trainable_variables()
             lossL2 = tf.add_n([tf.nn.l2_loss(v) for v in trainable_vars])
-            loss_op = cross_entropy_sum + l2_lambda*lossL2
+            loss_op = mse + l2_lambda*lossL2
             # predict ops
-            predict_op = tf.argmax(probs, 1, name="predict_op")
 
             # assign ops
-            self.cost = cross_entropy_sum
+            self.cost = mse
             self.loss_op = loss_op
-            self.predict_op = predict_op
-            self.probs = probs
+            self.predict_op = score
 
     def _build_inputs(self):
         with tf.name_scope("input"):
             self._memory_key = tf.placeholder(tf.int32, [None, self._memory_value_size, self._story_size], name='memory_key')
             
-            self._query = tf.placeholder(tf.int32, [None, self._query_size], name='question')
+            self._query = tf.placeholder(tf.int32, [None, self._query_size], name='essay')
 
-            #self._memory_value = tf.placeholder(tf.int32, [None, self._memory_value_size, self._story_size], name='memory_value')
-
-            self._score_encoding = tf.placeholder(tf.int32, [None], name='score_encoding')
+            self._score_encoding = tf.placeholder(tf.float32, [None], name='score')
             self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
             self.w_placeholder = tf.placeholder(tf.float32, [self._vocab_size, self._embedding_size])
             self._mem_attention_encoding = tf.placeholder(tf.int32, [None, self._memory_key_size])
@@ -216,8 +206,8 @@ class MemN2N_KV(object):
         
         with tf.variable_scope(self._name):
             # [feature_size, batch_size]
-            u_o = tf.matmul(self.A, questions, transpose_b=True)
-            u = [u_o]
+            u = tf.matmul(self.A, questions, transpose_b=True)
+            u = [u]
             for _ in range(self._hops):
                 R = r_list[_]
                 u_temp = u[-1]
@@ -253,8 +243,8 @@ class MemN2N_KV(object):
                 # test point
                 u_k = tf.nn.relu(tf.matmul(R, u[-1]+o_k))
                 #u_k = tf.matmul(R, u[-1]+o_k)
-                #u_k = tf.nn.relu(tf.matmul(R, u_o + o_k))
+
                 u.append(u_k)
-            #TODO:
+            # test point
             return u[-1]
-            #return tf.add_n(u)/len(u)
+            # return tf.add_n(u)/len(u)

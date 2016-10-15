@@ -1,6 +1,6 @@
 #!/bin/bash
-for ((i=3; i<=8; i++))
+for ((i=1; i<=8; i++))
 do
     echo $i
-    python train.py --essay_set_id $i &| tee logs/0915_$i
+    python train.py --essay_set_id $i
 done
