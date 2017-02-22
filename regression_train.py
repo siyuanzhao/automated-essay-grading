@@ -1,7 +1,7 @@
 import data_utils
 import numpy as np
 from sklearn import cross_validation
-from memn2n_kv_8 import MemN2N_KV
+from memn2n_kv_regression import MemN2N_KV
 #from skll.metrics import kappa
 from qwk import quadratic_weighted_kappa as kappa
 import tensorflow as tf
@@ -191,16 +191,21 @@ with tf.Graph().as_default():
                 model._query: e,
                 model._memory_key: m,
                 model._score_encoding: s,
-                model.keep_prob: FLAGS.keep_prob
+                model.keep_prob: FLAGS.keep_prob,
+                model.max_score: max_score
             }
+            start_time = time.time()
             _, step, predict_op, cost = sess.run([train_op, global_step, model.predict_op, model.cost], feed_dict)
-            return predict_op, cost
+            end_time = time.time()
+            time_cost = end_time - start_time
+            return predict_op, cost, time_cost
 
         def test_step(e, m):
             feed_dict = {
                 model._query: e,
                 model._memory_key: m,
-                model.keep_prob: 1
+                model.keep_prob: 1,
+                min_score: min_score
             }
             preds = sess.run(model.predict_op, feed_dict)
             return preds

@@ -1,13 +1,13 @@
 import data_utils
 import numpy as np
 from sklearn import cross_validation
-from memn2n_g_kv import MemN2N_KV
 from qwk import quadratic_weighted_kappa
 import tensorflow as tf
 from memn2n_kv import add_gradient_noise
 import time
 import os
 import sys
+import pandas as pd
 
 print 'start to load flags\n'
 
@@ -25,15 +25,15 @@ tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
 tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
-tf.flags.DEFINE_integer("token_num", 42, "The number of token in glove")
-tf.flags.DEFINE_string("reader", "bow", "Reader for the model (bow, simple_gru)")
+tf.flags.DEFINE_integer("token_num", 42, "The number of token in glove (6, 42)")
+tf.flags.DEFINE_boolean("gated_addressing", False, "Simple gated addressing")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
 # hyper-parameters
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
-#vocab_limit = 13000
+gated_addressing = FLAGS.gated_addressing
 essay_set_id = FLAGS.essay_set_id
 batch_size = FLAGS.batch_size
 embedding_size = FLAGS.embedding_size
@@ -46,9 +46,13 @@ num_samples = FLAGS.num_samples
 num_tokens = FLAGS.token_num
 test_batch_size = batch_size
 random_state = 0
+if gated_addressing:
+    from memn2n_g_kv import MemN2N_KV
+else:
+    from memn2n_kv import MemN2N_KV
 # print flags info
 orig_stdout = sys.stdout
-timestamp = str(int(time.time()))
+timestamp = time.strftime("%b_%d_%Y_%H:%M:%S", time.localtime())
 folder_name = 'essay_set_{}_{}_{}'.format(essay_set_id, num_samples, timestamp)
 out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", folder_name))
 if not os.path.exists(out_dir):
@@ -153,6 +157,7 @@ with open(out_dir+'/params', 'a') as f:
     f.write('The size of training data: {}\n'.format(n_train))
     f.write('The size of testing data: {}\n'.format(n_test))
     f.write('The size of evaluation data: {}\n'.format(n_eval))
+    f.write('\nEssay scores in memory:\n{}'.format(memory_score))
     f.write('\nEssay ids in memory:\n{}'.format(memory_essay_ids))
     f.write('\nEssay ids in training:\n{}'.format(train_essay_id))
     f.write('\nEssay ids in evaluation:\n{}'.format(eval_essay_id))
@@ -219,8 +224,8 @@ with tf.Graph().as_default():
                 model.keep_prob: 1
                 #model.w_placeholder: word2vec
             }
-            preds = sess.run(model.predict_op, feed_dict)
-            return preds
+            preds, mem_attention_probs = sess.run([model.predict_op, model.mem_attention_probs], feed_dict)
+            return preds, mem_attention_probs
 
         for i in range(1, epochs+1):
             train_cost = 0
@@ -257,7 +262,7 @@ with tf.Graph().as_default():
                     #for _ in range(end-start):
                     #    batched_memory.append(memory)
                     batched_memory = [memory] * (end-start)
-                    preds = test_step(trainE[start:end], batched_memory)
+                    preds, _ = test_step(trainE[start:end], batched_memory)
                     for ite in preds:
                         train_preds.append(ite)
                 train_preds = np.add(train_preds, min_score)
@@ -273,7 +278,7 @@ with tf.Graph().as_default():
                     #for _ in range(end-start):
                     #    batched_memory.append(memory)
                     batched_memory = [memory] * (end-start)
-                    preds = test_step(evalE[start:end], batched_memory)
+                    preds, _ = test_step(evalE[start:end], batched_memory)
                     for ite in preds:
                         eval_preds.append(ite)
 
@@ -284,6 +289,7 @@ with tf.Graph().as_default():
 
                 # test on test data
                 test_preds = []
+                test_atten_probs = []
                 for start in range(0, n_test, test_batch_size):
                     end = min(n_test, start+test_batch_size)
                     
@@ -291,17 +297,26 @@ with tf.Graph().as_default():
                     #for _ in range(end-start):
                     #    batched_memory.append(memory)
                     batched_memory = [memory] * (end-start)
-                    preds = test_step(testE[start:end], batched_memory)
+                    preds, mem_attention_probs = test_step(testE[start:end], batched_memory)
                     for ite in preds:
                         test_preds.append(ite)
-
+                    for ite in mem_attention_probs:
+                        test_atten_probs.append(ite)
                 test_preds = np.add(test_preds, min_score)
                 #test_kappp_score = kappa(test_scores, test_preds, 'quadratic')
                 test_kappp_score = quadratic_weighted_kappa(
                     test_scores, test_preds, min_score, max_score)
+                stat_dict = {'essay_id': test_essay_id, 'score': test_scores, 'pred_score': test_preds}
+                stat_df = pd.DataFrame(stat_dict)
                 # save the model if it gets best kappa
                 if(test_kappp_score > best_kappa_so_far):
                     best_kappa_so_far = test_kappp_score
+                    # stats on test
+                    stat_df.to_csv(out_dir+'/stat')
+                    with open(out_dir+'/mem_atten', 'a') as f:
+                        for idx, ite in enumerate(test_essay_id):
+                            f.write('{}\n'.format(ite))
+                            f.write('{}\n'.format(test_atten_probs[idx]))
                     #saver.save(sess, out_dir+'/checkpoints', global_step)
                 print("Training kappa score = {}".format(train_kappp_score))
                 print("Validation kappa score = {}".format(eval_kappp_score))

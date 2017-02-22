@@ -105,6 +105,9 @@ class MemN2N_KV(object):
         self._n_hidden = feature_size
         self.reader_feature_size = 0
 
+        # keep track of attention in memory
+        self.mem_attention_probs = []
+
         # one-hot encoding for scores
         self._labels = tf.one_hot(self._score_encoding, score_range, on_value=1.0, off_value=0.0, axis=-1)
         # trainable variables
@@ -123,18 +126,7 @@ class MemN2N_KV(object):
         #                          initializer=tf.contrib.layers.xavier_initializer())
 
         # Embedding layer
-        #with tf.device('/cpu:0'), tf.name_scope("embedding"):
-        #nil_word_slot = tf.zeros([1, embedding_size])
-        #self.W = tf.concat(0, [nil_word_slot, tf.get_variable('W', shape=[vocab_size-1, embedding_size],
-        #                                                      initializer=tf.contrib.layers.xavier_initializer())])
-        #self.W_memory = tf.concat(0, [nil_word_slot, tf.get_variable('W_memory', shape=[vocab_size-1, embedding_size],
-        #                                                             initializer=tf.contrib.layers.xavier_initializer())])
-        #W = tf.Variable(tf.constant(0.0, shape=[self._vocab_size, self._embedding_size]),
-        #                trainable=False, name="W")
         self.W = tf.Variable(self.w_placeholder, trainable=False)
-        #self.W = tf.get_variable('W', [self._vocab_size, self._embedding_size], trainable=False)
-        #self.W = W.assign(self.w_placeholder)
-        #self.W = tf.constant(word_vectors, dtype=tf.float32, name='W')
         self.W_memory = self.W
         
         # shape: [batch_size, query_size, embedding_size]
@@ -148,10 +140,13 @@ class MemN2N_KV(object):
         value_r = tf.reduce_sum(self.mvalues_embedded_chars*self._encoding, 2)
 
         r_list = []
+        R = tf.get_variable('R', shape=[self._feature_size, self._feature_size],
+                            initializer=tf.contrib.layers.xavier_initializer())
+
         for _ in range(self._hops):
             # define R for variables
-            R = tf.get_variable('R{}'.format(_), shape=[self._feature_size, self._feature_size],
-                                initializer=tf.contrib.layers.xavier_initializer())
+            #R = tf.get_variable('R{}'.format(_), shape=[self._feature_size, self._feature_size],
+            #                    initializer=tf.contrib.layers.xavier_initializer())
             r_list.append(R)
 
         o = self._key_addressing(doc_r, value_r, q_r, r_list)
@@ -213,11 +208,12 @@ class MemN2N_KV(object):
     self.A, self.B and R are the parameters to learn
     '''
     def _key_addressing(self, mkeys, mvalues, questions, r_list):
-        
+        self.mem_attention_probs = []
         with tf.variable_scope(self._name):
             # [feature_size, batch_size]
             u_o = tf.matmul(self.A, questions, transpose_b=True)
             u = [u_o]
+            hop_probs = []
             for _ in range(self._hops):
                 R = r_list[_]
                 u_temp = u[-1]
@@ -236,6 +232,7 @@ class MemN2N_KV(object):
                 # Calculate probabilities
                 # [batch_size, memory_size]
                 probs = tf.nn.softmax(dotted)
+                self.mem_attention_probs.append(probs)
                 # [batch_size, memory_size, 1]
                 probs_expand = tf.expand_dims(probs, -1)
                 mv_temp = mvalues # + self.TV
@@ -251,10 +248,11 @@ class MemN2N_KV(object):
                 o_k = tf.transpose(o_k)
                 # [feature_size, batch_size]
                 # test point
-                u_k = tf.nn.relu(tf.matmul(R, u[-1]+o_k))
+                #u_k = tf.nn.relu(tf.matmul(R, u[-1]+o_k))
                 #u_k = tf.matmul(R, u[-1]+o_k)
-                #u_k = tf.nn.relu(tf.matmul(R, u_o + o_k))
+                u_k = tf.nn.relu(tf.matmul(R, u_o + o_k))
                 u.append(u_k)
+            self.mem_attention_probs = tf.pack(self.mem_attention_probs, axis=1)
             #TODO:
             return u[-1]
             #return tf.add_n(u)/len(u)

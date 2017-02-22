@@ -24,7 +24,6 @@ def load_glove(token_num=6, dim=50):
     word_idx = {}
     # first word is nil
     word2vec.append([0]*dim)
-    print "==> loading glove"
     count = 1
     with open(os.path.join(os.path.dirname(os.path.realpath(__file__)), "glove/glove."+str(token_num)+
                            "B." + str(dim) + "d.txt")) as f:
