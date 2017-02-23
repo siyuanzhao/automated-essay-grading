@@ -17,14 +17,14 @@ tf.flags.DEFINE_float("l2_lambda", 0.3, "Lambda for l2 loss.")
 tf.flags.DEFINE_float("learning_rate", 0.002, "Learning rate")
 tf.flags.DEFINE_float("max_grad_norm", 10.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 0.8, "Keep probability for dropout")
-tf.flags.DEFINE_integer("evaluation_interval", 3, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
 tf.flags.DEFINE_integer("feature_size", 100, "Feature size")
 tf.flags.DEFINE_integer("num_samples", 1, "Number of samples selected from training for each score")
-tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
+tf.flags.DEFINE_integer("hops", 2, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
-tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("essay_set_id", 7, "essay set id, 1 <= id <= 8")
 tf.flags.DEFINE_integer("token_num", 42, "The number of token in glove (6, 42)")
 tf.flags.DEFINE_boolean("gated_addressing", False, "Simple gated addressing")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
@@ -33,6 +33,7 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
+is_regression = True
 gated_addressing = FLAGS.gated_addressing
 essay_set_id = FLAGS.essay_set_id
 batch_size = FLAGS.batch_size
@@ -46,8 +47,8 @@ num_samples = FLAGS.num_samples
 num_tokens = FLAGS.token_num
 test_batch_size = batch_size
 random_state = 0
-if gated_addressing:
-    from memn2n_g_kv import MemN2N_KV
+if is_regression:
+    from memn2n_kv_regression import MemN2N_KV
 else:
     from memn2n_kv import MemN2N_KV
 # print flags info
@@ -143,9 +144,10 @@ def test_step(e, m):
         #model.w_placeholder: word2vec
     }
     preds, mem_attention_probs = sess.run([model.predict_op, model.mem_attention_probs], feed_dict)
-    return preds, mem_attention_probs
+    return np.round(np.clip(preds, min_score, max_score)), mem_attention_probs
 fold_count = 0
 kf = KFold(n_splits=5, random_state=random_state)
+best_kappa_scores = []
 for train_index, test_index in kf.split(essay_id):
     fold_count += 1
     trainE = []
@@ -185,7 +187,11 @@ for train_index, test_index in kf.split(essay_id):
                 memory_essay_ids.append(train_essay_id.pop(score_idx))
                 memory_sent_size.append(sent_size)
     memory_size = len(memory)
-    train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
+    if is_regression:
+        # bad naming
+        train_scores_encoding = train_scores
+    else:
+        train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
 
     # data size
     n_train = len(trainE)
@@ -227,8 +233,8 @@ for train_index, test_index in kf.split(essay_id):
                               for g, v in grads_and_vars if g is not None]
             grads_and_vars = [(add_gradient_noise(g, 1e-3), v) for g, v in grads_and_vars]
             train_op = optimizer.apply_gradients(grads_and_vars, name="train_op", global_step=global_step)
-            sess.run(tf.initialize_all_variables(), feed_dict={model.w_placeholder: word2vec})
-            saver = tf.train.Saver(tf.all_variables())
+            sess.run(tf.global_variables_initializer(), feed_dict={model.w_placeholder: word2vec})
+            saver = tf.train.Saver(tf.global_variables())
 
             for i in range(1, epochs+1):
                 train_cost = 0
@@ -311,5 +317,11 @@ for train_index, test_index in kf.split(essay_id):
                         f.write("Best Testing kappa score so far = {}\n".format(best_kappa_so_far))
                         f.write('*'*10)
                         f.write('\n')
+            best_kappa_scores.append(best_kappa_so_far)
+
+with open(out_dir+'/eval'.format(fold_count), 'a') as f:
+    f.write('5 fold cv {}\n'.format(best_kappa_scores))
+    f.write('final result is {}'.format(np.mean(np.array(best_kappa_scores))))
+
 #sys.stdout = orig_stdout
 #f.close()

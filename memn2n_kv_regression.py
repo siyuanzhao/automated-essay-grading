@@ -33,7 +33,7 @@ def add_gradient_noise(t, stddev=1e-3, name=None):
 
     0.001 was said to be a good fixed value for memory networks [2].
     """
-    with tf.op_scope([t, stddev], name, "add_gradient_noise") as name:
+    with tf.name_scope(name, "add_gradient_noise", [t, stddev]) as name:
         #r = 0.55
         t = tf.convert_to_tensor(t, name="t")
         #sd = stddev/(1+step)**r
@@ -46,7 +46,7 @@ def zero_nil_slot(t, name=None):
     The nil_slot is a dummy slot and should not be trained and influence
     the training algorithm.
     """
-    with tf.op_scope([t], name, "zero_nil_slot") as name:
+    with tf.name_scope(name, "zero_nil_slot", [t]) as name:
         t = tf.convert_to_tensor(t, name="t")
         s = tf.shape(t)[1]
         z = tf.zeros(tf.pack([1, s]))
@@ -57,8 +57,7 @@ class MemN2N_KV(object):
     def __init__(self, batch_size, vocab_size,
                  query_size, story_size, memory_key_size,
                  memory_value_size, embedding_size,
-                 min_score, max_score,
-                 feature_size=30,
+                 min_score, feature_size=30,
                  hops=3,
                  reader='bow',
                  l2_lambda=0.2,
@@ -165,8 +164,9 @@ class MemN2N_KV(object):
         with tf.name_scope("prediction"):
             #logits = tf.matmul(o, y_tmp)# + logits_bias
             logits = tf.matmul(o, self.B) + logits_bias
-            normed_score = tf.squeeze(tf.nn.sigmoid(tf.cast(logits, tf.float32)))
-            score = normed_score * (max_score - min_score) + min_score
+            #normed_score = tf.squeeze(tf.nn.sigmoid(tf.cast(logits, tf.float32)))
+            #score = normed_score * (max_score - min_score) + min_score
+            score = tf.squeeze(logits)
             mse = tf.reduce_mean(tf.square(tf.sub(score, self._score_encoding)))
             # loss op
             trainable_vars = tf.trainable_variables()
@@ -203,7 +203,7 @@ class MemN2N_KV(object):
     self.A, self.B and R are the parameters to learn
     '''
     def _key_addressing(self, mkeys, mvalues, questions, r_list):
-        
+        self.mem_attention_probs = []
         with tf.variable_scope(self._name):
             # [feature_size, batch_size]
             u = tf.matmul(self.A, questions, transpose_b=True)
@@ -226,6 +226,8 @@ class MemN2N_KV(object):
                 # Calculate probabilities
                 # [batch_size, memory_size]
                 probs = tf.nn.softmax(dotted)
+                self.mem_attention_probs.append(probs)
+
                 # [batch_size, memory_size, 1]
                 probs_expand = tf.expand_dims(probs, -1)
                 mv_temp = mvalues # + self.TV
@@ -245,6 +247,7 @@ class MemN2N_KV(object):
                 #u_k = tf.matmul(R, u[-1]+o_k)
 
                 u.append(u_k)
+            self.mem_attention_probs = tf.pack(self.mem_attention_probs, axis=1)
             # test point
             return u[-1]
             # return tf.add_n(u)/len(u)
