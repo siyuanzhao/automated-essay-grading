@@ -144,7 +144,11 @@ def test_step(e, m):
         #model.w_placeholder: word2vec
     }
     preds, mem_attention_probs = sess.run([model.predict_op, model.mem_attention_probs], feed_dict)
-    return np.round(np.clip(preds, min_score, max_score)), mem_attention_probs
+    if is_regression:
+        return np.clip(np.round(preds), min_score, max_score), mem_attention_probs
+    else:
+        return preds, mem_attention_probs
+
 fold_count = 0
 kf = KFold(n_splits=5, random_state=random_state)
 best_kappa_scores = []
@@ -274,7 +278,8 @@ for train_index, test_index in kf.split(essay_id):
                         preds, _ = test_step(trainE[start:end], batched_memory)
                         for ite in preds:
                             train_preds.append(ite)
-                    train_preds = np.add(train_preds, min_score)
+                    if not is_regression:
+                        train_preds = np.add(train_preds, min_score)
                     #train_kappp_score = kappa(train_scores, train_preds, 'quadratic')
                     train_kappp_score = quadratic_weighted_kappa(
                         train_scores, train_preds, min_score, max_score)
@@ -293,7 +298,8 @@ for train_index, test_index in kf.split(essay_id):
                             test_preds.append(ite)
                         for ite in mem_attention_probs:
                             test_atten_probs.append(ite)
-                    test_preds = np.add(test_preds, min_score)
+                    if not is_regression:
+                        test_preds = np.add(test_preds, min_score)
                     #test_kappp_score = kappa(test_scores, test_preds, 'quadratic')
                     test_kappp_score = quadratic_weighted_kappa(
                         test_scores, test_preds, min_score, max_score)

@@ -5,7 +5,7 @@ from memn2n_kv_regression import MemN2N_KV
 #from skll.metrics import kappa
 from qwk import quadratic_weighted_kappa as kappa
 import tensorflow as tf
-from memn2n_kv import add_gradient_noise
+from memn2n_kv_regression import add_gradient_noise
 import time
 import os
 import sys
@@ -16,17 +16,17 @@ print 'start to load flags\n'
 tf.flags.DEFINE_float("epsilon", 0.1, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("l2_lambda", 0.1, "Lambda for l2 loss.")
 tf.flags.DEFINE_float("learning_rate", 0.002, "Learning rate")
-tf.flags.DEFINE_float("max_grad_norm", 10.0, "Clip gradients to this norm.")
+tf.flags.DEFINE_float("max_grad_norm", 1, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 0.8, "Keep probability for dropout")
 tf.flags.DEFINE_integer("evaluation_interval", 3, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
-tf.flags.DEFINE_integer("feature_size", 60, "Feature size")
+tf.flags.DEFINE_integer("feature_size", 100, "Feature size")
 tf.flags.DEFINE_integer("num_samples", 1, "Number of samples selected from training for each score")
-tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
+tf.flags.DEFINE_integer("hops", 1, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
 tf.flags.DEFINE_integer("token_num", 42, "The number of token in glove")
-tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("essay_set_id", 7, "essay set id, 1 <= id <= 8")
 tf.flags.DEFINE_string("reader", "bow", "Reader for the model (bow, simple_gru)")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
@@ -34,7 +34,7 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
-vocab_limit = 13000
+#vocab_limit = 13000
 essay_set_id = FLAGS.essay_set_id
 batch_size = FLAGS.batch_size
 embedding_size = FLAGS.embedding_size
@@ -132,9 +132,9 @@ trainE, evalE, train_scores, eval_scores, train_essay_id, eval_essay_id = cross_
     trainE, train_scores, train_essay_id, test_size=.2, random_state=random_state)
 
 # convert score to one hot encoding
-train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
+#train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
 # normalize training score
-normed_train_scores = (np.array(train_scores) - min_score) / (max_score - min_score)
+#normed_train_scores = (np.array(train_scores) - min_score) / (max_score - min_score)
 
 # data size
 n_train = len(trainE)
@@ -182,17 +182,16 @@ with tf.Graph().as_default():
         grads_and_vars = [(add_gradient_noise(g), v) for g, v in grads_and_vars]
         train_op = optimizer.apply_gradients(grads_and_vars, name="train_op", global_step=global_step)
         
-        sess.run(tf.initialize_all_variables(), feed_dict={model.w_placeholder: word2vec})
+        sess.run(tf.global_variables_initializer(), feed_dict={model.w_placeholder: word2vec})
 
-        saver = tf.train.Saver(tf.all_variables())
+        saver = tf.train.Saver(tf.global_variables())
 
         def train_step(m, e, s):
             feed_dict = {
                 model._query: e,
                 model._memory_key: m,
                 model._score_encoding: s,
-                model.keep_prob: FLAGS.keep_prob,
-                model.max_score: max_score
+                model.keep_prob: FLAGS.keep_prob
             }
             start_time = time.time()
             _, step, predict_op, cost = sess.run([train_op, global_step, model.predict_op, model.cost], feed_dict)
@@ -204,24 +203,23 @@ with tf.Graph().as_default():
             feed_dict = {
                 model._query: e,
                 model._memory_key: m,
-                model.keep_prob: 1,
-                min_score: min_score
+                model.keep_prob: 1
             }
             preds = sess.run(model.predict_op, feed_dict)
-            return preds
+            return np.round(preds)
 
         for i in range(1, epochs+1):
             train_cost = 0
             np.random.shuffle(batches)
             for start, end in batches:
                 e = trainE[start:end]
-                s = train_scores_encoding[start:end]
+                s = train_scores[start:end]
                 #s = normed_train_scores[start:end]
                 batched_memory = []
                 # batch sized memory
                 for _ in range(len(e)):
                     batched_memory.append(memory)
-                _, cost = train_step(batched_memory, e, s)
+                _, cost, _ = train_step(batched_memory, e, s)
                 train_cost += cost
             print 'Finish epoch {}, total training cost is {}'.format(i, train_cost)
             # evaluation
@@ -236,6 +234,10 @@ with tf.Graph().as_default():
                         batched_memory.append(memory)
                     preds = test_step(trainE[start:end], batched_memory)
                     for ite in preds:
+                        if ite > max_score:
+                            ite = max_score
+                        elif ite < min_score:
+                            ite = min_score
                         train_preds.append(ite)
                 # regression
                 #train_preds = np.array(train_preds)*(max_score-min_score) + min_score
@@ -252,6 +254,11 @@ with tf.Graph().as_default():
                         batched_memory.append(memory)
                     preds = test_step(evalE[start:end], batched_memory)
                     for ite in preds:
+                        if ite > max_score:
+                            ite = max_score
+                        elif ite < min_score:
+                            ite = min_score
+
                         eval_preds.append(ite)
                 # regression
                 #eval_preds = np.array(eval_preds)*(max_score-min_score) + min_score
@@ -267,6 +274,11 @@ with tf.Graph().as_default():
                         batched_memory.append(memory)
                     preds = test_step(testE[start:end], batched_memory)
                     for ite in preds:
+                        if ite > max_score:
+                            ite = max_score
+                        elif ite < min_score:
+                            ite = min_score
+
                         test_preds.append(ite)
                 # regression
                 #test_preds = np.array(test_preds)*(max_score-min_score) + min_score

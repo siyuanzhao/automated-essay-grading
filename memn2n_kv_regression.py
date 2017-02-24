@@ -225,7 +225,7 @@ class MemN2N_KV(object):
 
                 # Calculate probabilities
                 # [batch_size, memory_size]
-                probs = tf.nn.softmax(dotted)
+                probs = tf.nn.softmax(tf.to_float(dotted))
                 self.mem_attention_probs.append(probs)
 
                 # [batch_size, memory_size, 1]
