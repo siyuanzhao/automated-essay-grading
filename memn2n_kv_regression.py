@@ -143,10 +143,13 @@ class MemN2N_KV(object):
             value_r = tf.reduce_sum(self.mvalues_embedded_chars*self._encoding, 2)
 
         r_list = []
+        R = tf.get_variable('R', shape=[self._feature_size, self._feature_size],
+                            initializer=tf.contrib.layers.xavier_initializer())
+        
         for _ in range(self._hops):
             # define R for variables
-            R = tf.get_variable('R{}'.format(_), shape=[self._feature_size, self._feature_size],
-                                initializer=tf.contrib.layers.xavier_initializer())
+            #R = tf.get_variable('R{}'.format(_), shape=[self._feature_size, self._feature_size],
+            #                    initializer=tf.contrib.layers.xavier_initializer())
             r_list.append(R)
 
         o = self._key_addressing(doc_r, value_r, q_r, r_list)
@@ -206,8 +209,8 @@ class MemN2N_KV(object):
         self.mem_attention_probs = []
         with tf.variable_scope(self._name):
             # [feature_size, batch_size]
-            u = tf.matmul(self.A, questions, transpose_b=True)
-            u = [u]
+            u_o = tf.matmul(self.A, questions, transpose_b=True)
+            u = [u_o]
             for _ in range(self._hops):
                 R = r_list[_]
                 u_temp = u[-1]
@@ -215,7 +218,7 @@ class MemN2N_KV(object):
                 # [reader_size, batch_size x memory_size]
                 k_temp = tf.reshape(tf.transpose(mk_temp, [2, 0, 1]), [self.reader_feature_size, -1])
                 # [feature_size, batch_size x memory_size]
-                a_k_temp = tf.matmul(self.A_mvalue, k_temp)
+                a_k_temp = tf.nn.dropout(tf.matmul(self.A_mvalue, k_temp), self.keep_prob)
                 # [batch_size, memory_size, feature_size]
                 a_k = tf.reshape(tf.transpose(a_k_temp), [-1, self._memory_key_size, self._feature_size])
                 # [batch_size, 1, feature_size]
@@ -234,7 +237,7 @@ class MemN2N_KV(object):
                 # [reader_size, batch_size x memory_size]
                 v_temp = tf.reshape(tf.transpose(mv_temp, [2, 0, 1]), [self.reader_feature_size, -1])
                 # [feature_size, batch_size x memory_size]
-                a_v_temp = tf.matmul(self.A_mkey, v_temp)
+                a_v_temp = tf.nn.dropout(tf.matmul(self.A_mkey, v_temp), self.keep_prob)
                 # [batch_size, memory_size, feature_size]
                 a_v = tf.reshape(tf.transpose(a_v_temp), [-1, self._memory_key_size, self._feature_size])
                 # [batch_size, feature_size]
@@ -243,8 +246,8 @@ class MemN2N_KV(object):
                 o_k = tf.transpose(o_k)
                 # [feature_size, batch_size]
                 # test point
-                u_k = tf.nn.relu(tf.matmul(R, u[-1]+o_k))
-                #u_k = tf.matmul(R, u[-1]+o_k)
+                #u_k = tf.nn.relu(tf.matmul(R, u_o+o_k))
+                u_k = tf.nn.dropout(tf.nn.relu(tf.matmul(R, u[-1]+o_k)), self.keep_prob)
 
                 u.append(u_k)
             self.mem_attention_probs = tf.pack(self.mem_attention_probs, axis=1)
