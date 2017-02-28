@@ -13,27 +13,28 @@ print 'start to load flags\n'
 
 # flags
 tf.flags.DEFINE_float("epsilon", 0.1, "Epsilon value for Adam Optimizer.")
-tf.flags.DEFINE_float("l2_lambda", 0.2, "Lambda for l2 loss.")
+tf.flags.DEFINE_float("l2_lambda", 0.3, "Lambda for l2 loss.")
 tf.flags.DEFINE_float("learning_rate", 0.002, "Learning rate")
-tf.flags.DEFINE_float("max_grad_norm", 20.0, "Clip gradients to this norm.")
+tf.flags.DEFINE_float("max_grad_norm", 10.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 1, "Keep probability for dropout")
 tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_integer("batch_size", 32, "Batch size for training.")
-tf.flags.DEFINE_integer("feature_size", 120, "Feature size")
+tf.flags.DEFINE_integer("feature_size", 100, "Feature size")
 tf.flags.DEFINE_integer("num_samples", 1, "Number of samples selected from training for each score")
 tf.flags.DEFINE_integer("hops", 3, "Number of hops in the Memory Network.")
 tf.flags.DEFINE_integer("epochs", 200, "Number of epochs to train for.")
 tf.flags.DEFINE_integer("embedding_size", 300, "Embedding size for embedding matrices.")
-tf.flags.DEFINE_integer("essay_set_id", 7, "essay set id, 1 <= id <= 8")
+tf.flags.DEFINE_integer("essay_set_id", 1, "essay set id, 1 <= id <= 8")
 tf.flags.DEFINE_integer("token_num", 42, "The number of token in glove (6, 42)")
 tf.flags.DEFINE_boolean("gated_addressing", False, "Simple gated addressing")
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
+tf.flags.DEFINE_boolean("is_regression", True, "The output is regression or classification")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
 # hyper-parameters
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
-is_regression = False
+is_regression = FLAGS.is_regression
 gated_addressing = FLAGS.gated_addressing
 essay_set_id = FLAGS.essay_set_id
 batch_size = FLAGS.batch_size
