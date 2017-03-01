@@ -34,6 +34,8 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
+early_stop_count = 0
+max_step_count = 10
 is_regression = FLAGS.is_regression
 gated_addressing = FLAGS.gated_addressing
 essay_set_id = FLAGS.essay_set_id
@@ -146,7 +148,8 @@ def test_step(e, m):
     }
     preds, mem_attention_probs = sess.run([model.predict_op, model.mem_attention_probs], feed_dict)
     if is_regression:
-        return np.clip(np.round(preds), min_score, max_score), mem_attention_probs
+        preds = np.clip(np.round(preds), min_score, max_score)
+        return preds, mem_attention_probs
     else:
         return preds, mem_attention_probs
 
@@ -277,8 +280,11 @@ for train_index, test_index in kf.split(essay_id):
                         #    batched_memory.append(memory)
                         batched_memory = [memory] * (end-start)
                         preds, _ = test_step(trainE[start:end], batched_memory)
-                        for ite in preds:
-                            train_preds.append(ite)
+                        if type(preds) is np.float32:
+                            train_preds.append(preds)
+                        else:
+                            for ite in preds:
+                                train_preds.append(ite)
                     if not is_regression:
                         train_preds = np.add(train_preds, min_score)
                     #train_kappp_score = kappa(train_scores, train_preds, 'quadratic')
@@ -295,8 +301,11 @@ for train_index, test_index in kf.split(essay_id):
                         #    batched_memory.append(memory)
                         batched_memory = [memory] * (end-start)
                         preds, mem_attention_probs = test_step(testE[start:end], batched_memory)
-                        for ite in preds:
-                            test_preds.append(ite)
+                        if type(preds) is np.float32:
+                            test_preds.append(preds)
+                        else:
+                            for ite in preds:
+                                test_preds.append(ite)
                         for ite in mem_attention_probs:
                             test_atten_probs.append(ite)
                     if not is_regression:
@@ -308,6 +317,7 @@ for train_index, test_index in kf.split(essay_id):
                     stat_df = pd.DataFrame(stat_dict)
                     # save the model if it gets best kappa
                     if(test_kappp_score > best_kappa_so_far):
+                        early_stop_count = 0
                         best_kappa_so_far = test_kappp_score
                         # stats on test
                         stat_df.to_csv(out_dir+'/stat')
@@ -316,6 +326,8 @@ for train_index, test_index in kf.split(essay_id):
                                 f.write('{}\n'.format(ite))
                                 f.write('{}\n'.format(test_atten_probs[idx]))
                         #saver.save(sess, out_dir+'/checkpoints', global_step)
+                    else:
+                        early_stop_count += 1
                     print("Training kappa score = {}".format(train_kappp_score))
                     print("Testing kappa score = {}".format(test_kappp_score))
                     with open(out_dir+'/eval{}'.format(fold_count), 'a') as f:
@@ -324,6 +336,8 @@ for train_index, test_index in kf.split(essay_id):
                         f.write("Best Testing kappa score so far = {}\n".format(best_kappa_so_far))
                         f.write('*'*10)
                         f.write('\n')
+                if early_stop_count > max_step_count:
+                    break
             best_kappa_scores.append(best_kappa_so_far)
 
 with open(out_dir+'/eval'.format(fold_count), 'a') as f:
