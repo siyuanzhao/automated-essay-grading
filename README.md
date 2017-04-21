@@ -13,9 +13,9 @@ https://nlp.stanford.edu/projects/glove/
 
 ### Get Started
 
-'''
+```
 git clone https://github.com/siyuanzhao/automated-essay-grading.git
-'''
+```
 
 * Download training data file 'training_set_rel3.tsv' from [Kaggle](https://www.kaggle.com/c/asap-aes/data) and put it under the root folder of this repo.
 
