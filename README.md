@@ -22,8 +22,8 @@ git clone https://github.com/siyuanzhao/automated-essay-grading.git
 * Download 'glove.42B.300d.zip' from [https://nlp.stanford.edu/projects/glove/](https://nlp.stanford.edu/projects/glove/) and unzip all files into 'glove/' folder.
 
 ### Requirements
-* Tensorflow 1.0
-* scikit-learn 0.18
+* Tensorflow 1.10
+* scikit-learn 0.19
 * six 1.10.0
 
 ### Usage
