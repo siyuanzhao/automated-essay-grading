@@ -1,6 +1,6 @@
 # Automated Essay Grading
 Source code for the paper [A Memory-Augmented Neural Model for Automated Grading](http://dl.acm.org/citation.cfm?doid=3051457.3053982) in L@S 2017.
-
+**Note** that recent check-in updates the python from python 2.5 to python 3.7.
 ![Model Structure](AES-Model.png)
 
 The dataset comes from Kaggle ASAP competition. You can download the data from the link below.
@@ -25,6 +25,7 @@ git clone https://github.com/siyuanzhao/automated-essay-grading.git
 * Tensorflow 1.10
 * scikit-learn 0.19
 * six 1.10.0
+* **python 3.7**
 
 ### Usage
 ```

@@ -218,7 +218,7 @@ class MemN2N_KV(object):
     def _key_addressing(self, mkeys, mvalues, questions, r_list):
         self.mem_attention_probs = []
         with tf.variable_scope(self._name):
-            questions = tf.nn.dropout(questions, self.keep_prob)
+            questions = tf.nn.dropout(questions, rate=1-self.keep_prob)
             # [feature_size, batch_size]
             u_o = tf.matmul(self.A, questions, transpose_b=True)
             u = [u_o]
@@ -226,7 +226,7 @@ class MemN2N_KV(object):
             for _ in range(self._hops):
                 R = r_list[_]
                 u_temp = u[-1]
-                mk_temp = tf.nn.dropout(mkeys, self.keep_prob)
+                mk_temp = tf.nn.dropout(mkeys, rate=1-self.keep_prob)
                 # [reader_size, batch_size x memory_size]
                 k_temp = tf.reshape(tf.transpose(mk_temp, [2, 0, 1]), [self.reader_feature_size, -1])
                 # [feature_size, batch_size x memory_size]

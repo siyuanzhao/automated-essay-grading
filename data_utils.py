@@ -6,7 +6,7 @@ import pandas as pd
 from collections import Counter
 
 def load_training_data(training_path, essay_set=1):
-    training_df = pd.read_csv(training_path, delimiter='\t')
+    training_df = pd.read_csv(training_path, delimiter='\t', encoding = "ISO-8859-1")
     # resolved score for essay set 1
     resolved_score = training_df[training_df['essay_set'] == essay_set]['domain1_score']
     essay_ids = training_df[training_df['essay_set'] == essay_set]['essay_id']
@@ -30,12 +30,12 @@ def load_glove(token_num=6, dim=50):
         for line in f:
             l = line.split()
             word = l[0]
-            vector = map(float, l[1:])
+            vector = list(map(float, l[1:]))
             word_idx[word] = count
             word2vec.append(vector)
             count += 1
 
-    print "==> glove is loaded"
+    print( "==> glove is loaded")
 
     return word_idx, word2vec
 
@@ -46,7 +46,7 @@ def tokenize(sent):
     >>> tokenize('I don't know')
     ['I', 'don', '\'', 'know']
     '''
-    return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
+    return [x.strip() for x in re.split('(\W+)', sent) if x.strip()]
 
 def clean_str(string):
     """
@@ -76,7 +76,7 @@ def build_vocab(sentences, vocab_limit):
     """
     # Build vocabulary
     word_counts = Counter(itertools.chain(*sentences))
-    print 'Total size of vocab is {}'.format(len(word_counts.most_common()))
+    print( 'Total size of vocab is {}'.format(len(word_counts.most_common())))
     # Mapping from index to word
     # vocabulary_inv = [x[0] for x in word_counts.most_common(vocab_limit)]
     vocabulary_inv = [x[0] for x in word_counts.most_common(vocab_limit)]

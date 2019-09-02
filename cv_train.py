@@ -8,15 +8,15 @@ import os
 import sys
 import pandas as pd
 
-print 'start to load flags\n'
+print( 'start to load flags\n')
 
 # flags
 tf.flags.DEFINE_float("epsilon", 0.1, "Epsilon value for Adam Optimizer.")
 tf.flags.DEFINE_float("l2_lambda", 0.3, "Lambda for l2 loss.")
-tf.flags.DEFINE_float("learning_rate", 0.002, "Learning rate")
+tf.flags.DEFINE_float("learning_rate", 0.001, "Learning rate")
 tf.flags.DEFINE_float("max_grad_norm", 10.0, "Clip gradients to this norm.")
 tf.flags.DEFINE_float("keep_prob", 0.9, "Keep probability for dropout")
-tf.flags.DEFINE_integer("evaluation_interval", 2, "Evaluate and print results every x epochs")
+tf.flags.DEFINE_integer("evaluation_interval", 5, "Evaluate and print results every x epochs")
 tf.flags.DEFINE_integer("batch_size", 15, "Batch size for training.")
 tf.flags.DEFINE_integer("feature_size", 100, "Feature size")
 tf.flags.DEFINE_integer("num_samples", 1, "Number of samples selected from training for each score")
@@ -66,13 +66,13 @@ if not os.path.exists(out_dir):
 print("Writing to {}\n".format(out_dir))
 
 print("\nParameters:")
-for attr, value in sorted(FLAGS.__flags.items()):
-    print("{}={}".format(attr.upper(), value))
+for key in sorted(FLAGS.__flags.keys()):
+    print("{}={}".format(key, getattr(FLAGS, key)))
 print("")
 
 with open(out_dir+'/params', 'w') as f:
-    for attr, value in sorted(FLAGS.__flags.items()):
-        f.write("{}={}".format(attr.upper(), value))
+    for key in sorted(FLAGS.__flags.keys()):
+        f.write("{}={}".format(key, getattr(FLAGS, key)))
         f.write("\n")
 
 # hyper-parameters end here
@@ -86,7 +86,7 @@ if essay_set_id == 7:
 elif essay_set_id == 8:
     min_score, max_score = 0, 60
 
-print 'max_score is {} \t min_score is {}\n'.format(max_score, min_score)
+print( 'max_score is {} \t min_score is {}\n'.format(max_score, min_score))
 with open(out_dir+'/params', 'a') as f:
     f.write('max_score is {} \t min_score is {} \n'.format(max_score, min_score))
 
@@ -101,15 +101,15 @@ word_idx, word2vec = data_utils.load_glove(num_tokens, dim=embedding_size)
 vocab_size = len(word_idx) + 1
 # stat info on data set
 
-sent_size_list = map(len, [essay for essay in essay_list])
+sent_size_list = list(map(len, [essay for essay in essay_list]))
 max_sent_size = max(sent_size_list)
-mean_sent_size = int(np.mean(map(len, [essay for essay in essay_list])))
+mean_sent_size = int(np.mean(sent_size_list))
 
-print 'max sentence size: {} \nmean sentence size: {}\n'.format(max_sent_size, mean_sent_size)
+print( 'max sentence size: {} \nmean sentence size: {}\n'.format(max_sent_size, mean_sent_size))
 with open(out_dir+'/params', 'a') as f:
     f.write('max sentence size: {} \nmean sentence size: {}\n'.format(max_sent_size, mean_sent_size))
 
-print 'The length of score range is {}'.format(len(score_range))
+print( 'The length of score range is {}'.format(len(score_range)))
 E = data_utils.vectorize_data(essay_list, word_idx, max_sent_size)
 
 labeled_data = zip(E, resolved_scores, sent_size_list)
@@ -198,14 +198,14 @@ for train_index, test_index in kf.split(essay_id):
         # bad naming
         train_scores_encoding = train_scores
     else:
-        train_scores_encoding = map(lambda x: score_range.index(x), train_scores)
+        train_scores_encoding = list(map(lambda x: score_range.index(x), train_scores))
 
     # data size
     n_train = len(trainE)
     n_test = len(testE)
 
-    print 'The size of training data: {}'.format(n_train)
-    print 'The size of testing data: {}'.format(n_test)
+    print( 'The size of training data: {}'.format(n_train))
+    print( 'The size of testing data: {}'.format(n_test))
     with open(out_dir+'/params{}'.format(fold_count), 'a') as f:
         f.write('The size of training data: {}\n'.format(n_train))
         f.write('The size of testing data: {}\n'.format(n_test))
@@ -266,7 +266,7 @@ for train_index, test_index in kf.split(essay_id):
                     _, cost, time_spent = train_step(batched_memory, e, s, mem_atten_encoding)
                     total_time += time_spent
                     train_cost += cost
-                print 'Finish epoch {}, total training cost is {}, time spent is {}'.format(i, train_cost, total_time)
+                print( 'Finish epoch {}, total training cost is {}, time spent is {}'.format(i, train_cost, total_time))
                 # evaluation
                 if i % FLAGS.evaluation_interval == 0 or i == FLAGS.epochs:
                     # test on training data
